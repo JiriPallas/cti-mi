@@ -1,0 +1,33 @@
+ČTI MI – WEBOVÁ VERZE 0.1
+=========================
+
+Stejné ovládání jako program ČTI MI, ale běží v prohlížeči Edge (nebo Chrome).
+Dokumenty zůstávají v počítači, nic se nikam nenahrává. Dokument se pouze čte.
+
+ZVEŘEJNĚNÍ (jednou, na GitHubu – stejně jako rádio)
+1. github.com → + → New repository → název: cti → Public → Add a README → Create.
+2. Add file → Upload files → přetáhnout VŠECHNO ze složky CTI_WEB → Commit changes.
+3. Settings → Pages → Deploy from a branch → main, / (root) → Save.
+4. Za 1–2 minuty: https://TVOJEJMENO.github.io/cti/
+
+U SENIORA (jednou)
+1. V Edgi otevřít adresu výše, stisknout mezerník.
+2. Připnout jako aplikaci: menu … → Aplikace → Nainstalovat tento web jako aplikaci.
+   Vznikne ikona ČTI MI na ploše (vlastní okno, ZAVŘÍT okno zavře).
+3. Přidat složky s dokumenty – nejjednodušší je PŘETÁHNOUT složku z plochy myší do okna.
+   (Nebo NASTAVENÍ → PŘIDAT SLOŽKU.) Celou plochu prohlížeč povolit nedovolí, jen složky na ní.
+   Volné dokumenty z plochy: přetáhnout do okna, nebo NASTAVENÍ → PŘIDAT DOKUMENT.
+4. Když se prohlížeč zeptá na povolení, zvolit „Povolit při každé návštěvě“.
+
+V SEZNAMU „PLOCHA“ jsou přidané složky a dokumenty. Odebrat (pro pomocníka): vybrat a klávesa Delete
+– zmizí jen ze seznamu, na disku zůstává.
+
+HLAS: NASTAVENÍ → tlačítko HLAS přepíná mezi českými hlasy (Vlasta – žena, Antonín – muž, Jakub).
+Vlasta a Antonín potřebují internet; bez internetu se automaticky čte hlasem Jakub.
+
+UMÍ: Word (.docx) a text (.txt). PDF zatím ne – na to je program ČTI MI.
+
+ÚPRAVY NA DÁLKU: změnit index.html na GitHubu → senior má novou verzi při dalším otevření.
+
+Poznámka: nastavení a pozice v dokumentech se ukládají v prohlížeči, ne v programu ČTI MI –
+web a program o sobě navzájem nevědí.
