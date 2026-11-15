@@ -1,6 +1,6 @@
 {
- "name": "ČTI MI",
- "short_name": "ČTI MI",
+ "name": "ČTI MI web",
+ "short_name": "ČTI MI web",
  "lang": "cs",
  "start_url": "./",
  "scope": "./",

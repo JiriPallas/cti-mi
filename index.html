@@ -60,6 +60,7 @@
   #nast button { background: #000; color: #fff; border-color: #000; }
   #nast button:active { background: #fff; color: #000; }
   #nast button.zvoleno { background: #fff; color: #000; border: 6px solid #000; }
+  #nast .rada.mala { grid-template-columns: 1fr 1fr 1fr; }
   #nast .mala button { font-size: max(16px, calc(var(--pismo) - 10px)); }
 
   /* --- úvod a přetahování --- */
@@ -121,7 +122,7 @@
   <div class="popis">Seznam dokumentů řadit:</div>
   <div class="rada"><button id="n_abeceda">ABECEDNĚ</button><button id="n_nejnovejsi">NEJNOVĚJŠÍ NAHOŘE</button></div>
   <div id="n_slozky" class="popis">Pro pomocníka:</div>
-  <div class="rada mala"><button id="n_pridej_slozku">📁&nbsp; PŘIDAT SLOŽKU</button><button id="n_pridej_soubor">📄&nbsp; PŘIDAT DOKUMENT</button></div>
+  <div class="rada mala"><button id="n_pridej_slozku">📁&nbsp; PŘIDAT SLOŽKU</button><button id="n_pridej_soubor">📄&nbsp; PŘIDAT DOKUMENT</button><button id="n_vymaz">🗑&nbsp; VYMAZAT PAMĚŤ</button></div>
   <div class="rada jedna"><button id="n_hotovo" class="zelene">↩&nbsp; HOTOVO – ZPĚT KE ČTENÍ</button></div>
 </div>
 
@@ -382,7 +383,7 @@ let dok = null, odstavce = [], soubor = null;      // soubor = { handle, cesta:[
 let o = 0, v = 0, cte = false, gen = 0;
 let ohlasitStranu = false, ohlasitNazev = false, ohlasitZmenu = false;
 let casOrientace = 0, casStop = 0, skokStrana = null, varovani = "";
-let skok = nast.skok || "odstavec", razeni = nast.razeni || "abeceda";
+let skok = nast.skok || "strana", razeni = nast.razeni || "abeceda";
 let pismo = nast.pismo || 32;
 const tlNast = Object.assign({ dvojklik_ms: T.dvojklik, drzeni_ms: T.drzeni, krok_ms: T.krok, odskok_ms: T.odskok }, nast.tlacitko || {});
 let koreny = [];      // [{ druh: "slozka"|"soubor", handle }]
@@ -744,6 +745,7 @@ function obnovNastaveni() {
     const zvol = klic === skok || klic === razeni;
     $(id).textContent = (zvol ? "✓  " : "") + text; $(id).classList.toggle("zvoleno", zvol);
   }
+  $("n_vymaz").innerHTML = "🗑&nbsp; VYMAZAT PAMĚŤ"; vymazCas = -1e9;
   $("n_upozorneni").style.display = skok === "strana" ? "" : "none";
   const slo = koreny.filter(k => k.druh === "slozka").length, sou = koreny.length - slo;
   $("n_slozky").textContent = `Pro pomocníka:  na ploše ${slo} slož. a ${sou} dok.  (odebrat: v seznamu klávesa Delete)`;
@@ -892,6 +894,17 @@ klik("n_odstavec", () => nastavSkok("odstavec")); klik("n_strana", () => nastavS
 klik("n_abeceda", () => nastavRazeni("abeceda")); klik("n_nejnovejsi", () => nastavRazeni("nejnovejsi"));
 klik("n_pridej_slozku", pridejSlozku); klik("n_pridej_soubor", pridejSoubor);
 klik("n_hotovo", zavriNastaveni);
+let vymazCas = -1e9;
+klik("n_vymaz", async () => {        // pro pomocníka: vše zapomenout (dokumenty na disku zůstávají)
+  if (performance.now() - vymazCas > 4000) {
+    vymazCas = performance.now(); $("n_vymaz").textContent = "OPRAVDU? KLIKNĚTE ZNOVU";
+    rekni("Opravdu vymazat paměť? Klikněte znovu."); return;
+  }
+  stop();
+  try { for (const k of Object.keys(localStorage)) if (k.startsWith("cti.")) localStorage.removeItem(k); } catch (e) {}
+  await dbPis("koreny", []); await dbPis("posledni", null);
+  location.reload();
+});
 for (const b of document.querySelectorAll("button")) b.tabIndex = -1;   // mezerník ovládá čtení, ne tlačítko
 $("uvod").onclick = () => start();
 window.addEventListener("pagehide", ulozPozici);
