@@ -138,6 +138,7 @@ const T = { dvojklik: 1000, drzeni: 1000, krok: 1000, odskok: 100 };
 const NAHLED_SLOV = 4, NAHLED_PAUZA_MS = 400;
 const ORIENTACE_MIN = 15, VRATIT_PO_PAUZE_S = 300;
 const J = JAZYKY[JAZYK] || JAZYKY.cs, TX = J.t;
+const MAPPY = !!window.showDirectoryPicker;     // Windows (Edge/Chrome) ano, iPad/Safari ne
 const UKAZKA_RYCHLOSTI = TX.ukazkaRychlosti;
 const $ = id => document.getElementById(id);
 document.documentElement.lang = J.lang.slice(0, 2); document.title = J.nazev;
@@ -326,6 +327,7 @@ const zvuk = { tik: () => pipni([[880, 0.07]]), strana: () => pipni([[660, 0.08]
 
 /* ================================================================ hlas */
 let hlasy = [], hlas = null, nahradniHlas = null;
+const SYSTEM = "__system__";            // volba „hlas zařízení“ (iPad: webu nedá vylepšené hlasy, sám je ale použít může)
 const kratkeJmeno = v => v.name.replace(/^(Microsoft|Google)\s+/i, "").split(/[\s(-]/)[0] || v.name;
 function nactiHlasy() {
   if (!("speechSynthesis" in window)) return;
@@ -335,8 +337,9 @@ function nactiHlasy() {
     return (/natural|online/i.test(t) ? 40 : 0) + (/premium/i.test(t) ? 30 : 0) + (/enhanced|förbättrad|vylepšen|erweitert/i.test(t) ? 20 : 0)
          + (J.preferovanyHlas.test(v.name) ? 5 : 0) + (/compact|kompakt/i.test(t) ? -10 : 0); };
   hlasy.sort((a, b) => kvalita(b) - kvalita(a));
-  hlas = hlasy.find(v => v.name === nast.hlas) || (kvalita(hlasy[0] || {name: ""}) > 0 ? hlasy[0] : null)
-      || hlasy.find(v => /natural|online/i.test(v.name)) || hlasy[0] || null;
+  if (nast.hlas === SYSTEM) hlas = null;                       // iPad: hlas vybere zařízení samo
+  else hlas = hlasy.find(v => v.name === nast.hlas) || (kvalita(hlasy[0] || {name: ""}) > 0 ? hlasy[0] : null)
+      || (!MAPPY ? null : hlasy.find(v => /natural|online/i.test(v.name)) || hlasy[0] || null);   // iPad bez lepšího hlasu → hlas zařízení
   nahradniHlas = hlasy.find(v => v.localService) || null;      // bez internetu (česky Jakub)
   if (nastaveniOtevrene) obnovNastaveni();
 }
@@ -434,7 +437,6 @@ async function povol(h, mlcky = false) {
 async function maPovoleni(h) { try { return await h.queryPermission({ mode: "read" }) === "granted"; } catch (e) { return false; } }
 /* ---- iPad / Safari: prohlížeč nemá přístup ke složkám → dokumenty se vyberou v aplikaci Soubory
    a uloží se do aplikace (IndexedDB). Při dalším otevření jsou v seznamu, bez nového výběru. */
-const MAPPY = !!window.showDirectoryPicker;
 function obal(file) {        // uložený soubor se tváří jako handle ze systému souborů
   return { kind: "file", name: file.name, ulozeny: true, async getFile() { return file; },
            async queryPermission() { return "granted"; }, async requestPermission() { return "granted"; },
@@ -775,8 +777,8 @@ const dalsiSkok = () => skoc(skokDal);
 /* ================================================================ nastavení */
 function obnovNastaveni() {
   $("n_rychlost").textContent = TX.rychlostCteni(`${rychlost >= 0 ? "+" : ""}${Math.round(rychlost * 100)} %`);
-  $("n_hlas").textContent = hlas ? "🔊  " + kratkeJmeno(hlas).toUpperCase() : TX.zadnyHlas;
-  $("n_hlas_popis").textContent = TX.hlasPopis(hlasy.length > 1) + (hlas && !hlas.localService ? TX.hlasOnline : "");
+  $("n_hlas").textContent = hlas ? "🔊  " + kratkeJmeno(hlas).toUpperCase() : (!MAPPY || hlasy.length ? TX.systemHlas : TX.zadnyHlas);
+  $("n_hlas_popis").textContent = TX.hlasPopis(volbyHlasu().length > 1) + (hlas && !hlas.localService ? TX.hlasOnline : "");
   const zaklady = { n_odstavec: ["odstavec", J.html.odstavcich], n_strana: ["strana", J.html.strankach],
                     n_abeceda: ["abeceda", J.html.abecedne], n_nejnovejsi: ["nejnovejsi", J.html.nejnovejsi] };
   for (const [id, [klic, text]] of Object.entries(zaklady)) {
@@ -810,11 +812,13 @@ function zmenRychlost(krok) {
   if (nastaveniOtevrene) { obnovNastaveni(); ukazkaRychlosti(); return; }
   if (cte) skoc(() => {}, false); else rekni(krok > 0 ? TX.rychleji : TX.pomaleji);
 }
+const volbyHlasu = () => MAPPY ? hlasy : [null, ...hlasy];      // na iPadu navíc „hlas zařízení“
 function dalsiHlas() {
-  if (!hlasy.length) { rekni(TX.chybiHlas); return; }
-  hlas = hlasy[(hlasy.indexOf(hlas) + 1) % hlasy.length];
-  nast.hlas = hlas.name; ulozNast(); obnovNastaveni();
-  mluv(TX.hlasUkazka(kratkeJmeno(hlas)));
+  const volby = volbyHlasu();
+  if (!volby.length) { rekni(TX.chybiHlas); return; }
+  hlas = volby[(volby.indexOf(hlas) + 1) % volby.length];
+  nast.hlas = hlas ? hlas.name : SYSTEM; ulozNast(); obnovNastaveni();
+  mluv(hlas ? TX.hlasUkazka(kratkeJmeno(hlas)) : TX.systemUkazka);
 }
 function nastavSkok(s) {
   skok = s; nast.skok = s; ulozNast(); obnovNastaveni();
