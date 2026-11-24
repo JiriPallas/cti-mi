@@ -1,6 +1,6 @@
-// Service worker: aplikace se otevře i při výpadku internetu (dokumenty jsou v počítači).
-const CACHE = "cti-v2";
-const SOUBORY = ["./", "index.html", "manifest.webmanifest", "ikona-192.png", "ikona-512.png"];
+// Service worker pro ČTI MI (cs/) i READ-IT (sv/): aplikace se otevře i při výpadku internetu.
+const CACHE = "cti-v3";
+const SOUBORY = ["jazyky.js"];
 self.addEventListener("install", e => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(c => c.addAll(SOUBORY))); });
 self.addEventListener("activate", e => e.waitUntil(
   self.clients.claim().then(() => caches.keys()).then(k => Promise.all(k.filter(n => n.startsWith("cti-") && n !== CACHE).map(n => caches.delete(n))))));
@@ -15,5 +15,5 @@ self.addEventListener("fetch", e => {
   e.respondWith(fetch(pozadavek).then(r => {
     if (r.ok && e.request.method === "GET") { const kopie = r.clone(); caches.open(CACHE).then(c => c.put(e.request, kopie)); }
     return r;
-  }).catch(() => caches.match(e.request)));
+  }).catch(() => caches.match(e.request, { ignoreSearch: true })));
 });

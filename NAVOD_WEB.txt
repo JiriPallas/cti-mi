@@ -1,5 +1,13 @@
-ČTI MI – WEBOVÁ VERZE 0.1
-=========================
+ČTI MI / READ-IT – WEBOVÁ VERZE 0.2
+===================================
+
+DVĚ APLIKACE, JEDEN KÓD
+  ČTI MI  (česky):  https://jiripallas.github.io/cti-mi/cs/   (stará adresa /cti-mi/ sem přesměruje)
+  READ-IT (švédsky): https://jiripallas.github.io/cti-mi/sv/
+Každá má vlastní ikonu s vlajkou, vlastní nastavení a vlastní seznam složek.
+Texty obou jazyků jsou v jazyky.js. Vzhled a chování se mění v nastroje/sablona.html,
+pak spustit:  python nastroje/sestav_jazyky.py   (vytvoří složky cs/ a sv/).
+
 
 Stejné ovládání jako program ČTI MI, ale běží v prohlížeči Edge (nebo Chrome).
 Dokumenty zůstávají v počítači, nic se nikam nenahrává. Dokument se pouze čte.
