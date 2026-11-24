@@ -428,7 +428,42 @@ async function povol(h, mlcky = false) {
   } catch (e) { return false; }
 }
 async function maPovoleni(h) { try { return await h.queryPermission({ mode: "read" }) === "granted"; } catch (e) { return false; } }
-async function ulozKoreny() { await dbPis("koreny", koreny); }
+/* ---- iPad / Safari: prohlížeč nemá přístup ke složkám → dokumenty se vyberou v aplikaci Soubory
+   a uloží se do aplikace (IndexedDB). Při dalším otevření jsou v seznamu, bez nového výběru. */
+const MAPPY = !!window.showDirectoryPicker;
+function obal(file) {        // uložený soubor se tváří jako handle ze systému souborů
+  return { kind: "file", name: file.name, ulozeny: true, async getFile() { return file; },
+           async queryPermission() { return "granted"; }, async requestPermission() { return "granted"; },
+           async isSameEntry(x) { return !!x && x.ulozeny && x.name === file.name; } };
+}
+const zDb = k => k && k.druh === "ulozeny" ? { druh: "soubor", handle: obal(k.file), file: k.file } : k;
+async function ulozKoreny() { await dbPis("koreny", koreny.map(k => k.file ? { druh: "ulozeny", file: k.file } : k)); }
+async function ulozSoubory(files) {       // nové verze stejného jména nahradí starou
+  for (const f of files) {
+    koreny = koreny.filter(k => !(k.file && k.file.name === f.name));
+    koreny.push({ druh: "soubor", handle: obal(f), file: f });
+  }
+  await ulozKoreny();
+  return koreny.filter(k => k.file && files.some(f => f.name === k.file.name)).map(k => k.handle);
+}
+function vyberZeSouboru() {               // otevře aplikaci Soubory (iPad) / běžné okno pro výběr
+  return new Promise(ok => {
+    const i = document.createElement("input");
+    i.type = "file"; i.multiple = true; i.style.display = "none"; document.body.appendChild(i);   // Safari chce prvek ve stránce
+    setTimeout(() => i.remove(), 60000); i.accept = ".docx,.txt,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain";
+    i.onchange = () => ok([...i.files].filter(f => jeDokument(f.name)));
+    i.oncancel = () => ok([]);
+    i.click();
+  });
+}
+async function otevriNovy() {
+  const files = await vyberZeSouboru();
+  if (!files.length) return;
+  const handly = await ulozSoubory(files);
+  if (vyberOtevreny) zavriVyber();
+  if (nastaveniOtevrene) { nastaveniOtevrene = false; ukazStranku("cteni"); }
+  await otevri(handly[0], [], true);
+}
 async function pridejKoren(druh, handle) {
   for (const k of koreny) { try { if (await k.handle.isSameEntry(handle)) return k; } catch (e) {} }
   const k = { druh, handle }; koreny.push(k); await ulozKoreny(); return k;
@@ -490,7 +525,7 @@ function vykresliSeznam() {
     li.textContent = p.druh === "plocha" ? TX.zpetNaPlochuSeznam : p.druh === "akce" ? p.text :
                      (p.druh === "slozka" ? "📁  " : "") + kVysloveni(p);
     if (i === vybrany) li.className = "vybrano";
-    li.onclick = () => vyberNastav(i);
+    li.onclick = () => (p.druh === "akce" || (i === vybrany && !MAPPY)) ? vyberOtevri(i) : vyberNastav(i);   // iPad: 2. ťuknutí otevře
     li.ondblclick = () => vyberOtevri(i);
     ul.appendChild(li);
   });
@@ -510,6 +545,10 @@ async function nactiSlozku(cesta, vybrat = null, uvodPlocha = false) {
   try { polozky = await obsahSlozky(cesta); }
   catch (e) { polozky = []; }
   if (!naPlose) polozky.push(PLOCHA);
+  if (naPlose && !MAPPY) {
+    const novy = { druh: "akce", text: TX.otevritNovy, vyslov: TX.otevritNovyRec, akce: otevriNovy };
+    if (polozky.length) polozky.push(novy); else polozky = [novy, { druh: "akce", text: TX.nastaveniSeznam, vyslov: TX.nastaveniRec, akce: otevriNastaveni }];
+  }
   if (naPlose && !polozky.length) polozky = [
     { druh: "akce", text: TX.pridatSlozkuZPlochy, vyslov: TX.pridatSlozkuZPlochyRec, akce: pridejSlozku },
     { druh: "akce", text: TX.nastaveniSeznam, vyslov: TX.nastaveniRec, akce: otevriNastaveni }];
@@ -519,8 +558,8 @@ async function nactiSlozku(cesta, vybrat = null, uvodPlocha = false) {
                               `   ·   ${dokum} ${TX.dok}` + (slo ? `  ·  ${slo} ${TX.slozZkr}` : "");
   vykresliSeznam();
   if (polozky[0].druh === "akce") {
-    $("v_nadpis").textContent = TX.zadneSlozky;
-    vyberNastav(0, TX.zadneDokumenty);
+    $("v_nadpis").textContent = MAPPY ? TX.zadneSlozky : TX.plocha;
+    vyberNastav(0, MAPPY ? TX.zadneDokumenty : TX.zadneDokumentyIpad);
     return;
   }
   const casti = uvodPlocha ? [TX.vyberteDokument] : [];
@@ -567,6 +606,7 @@ async function vyberOtevri(i = vybrany) {
 function zavriVyber() { vyberOtevreny = false; nahled = false; ticho(); ukazStranku("cteni"); }
 function vyberZrus() { zavriVyber(); obnovDisplej(); if (!dok) ukazPrazdne(); rekni(dok ? TX.zpetKeCteni : TX.zadnyDokument); }
 function ukazPrazdne() {
+  if (!MAPPY) { ukaz(TX.prazdneIpad, ""); return; }
   ukaz(TX.prazdne, "");
 }
 async function odeberZPlochy() {          // klávesa Delete na ploše – pro pomocníka
@@ -602,7 +642,7 @@ async function otevri(handle, cesta, cist) {
   const poz = (nast.pozice || {})[soubor.klic];
   if (poz && poz[0] < odstavce.length && poz[1] < odstavce[poz[0]].length) [o, v] = poz;
   nast.posledni = soubor.klic; ulozPozici();
-  await dbPis("posledni", { handle, cesta });
+  await dbPis("posledni", handle.ulozeny ? { ulozeny: handle.name } : { handle, cesta });
   obnovDisplej();
   if (cist) await cti();
   return true;
@@ -785,7 +825,10 @@ async function pridejSlozku() {
   } catch (e) { if (e.name !== "AbortError") rekni(TX.slozkaNedovolena); }
 }
 async function pridejSoubor() {
-  if (!window.showOpenFilePicker) { rekni(TX.neumi); return; }
+  if (!window.showOpenFilePicker) {
+    const files = await vyberZeSouboru(); if (!files.length) return;
+    await ulozSoubory(files); obnovNastaveni(); rekni(TX.dokumentPridan(files.length)); return;
+  }
   try {
     const hs = await showOpenFilePicker({ id: "cti", startIn: "desktop", multiple: true, types: [{ description: TX.popisDokumentu,
       accept: { "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"], "text/plain": [".txt"] } }] });
@@ -919,7 +962,11 @@ document.addEventListener("drop", async e => {
   e.preventDefault(); pretahHloubka = 0; $("pretah").classList.remove("ukazana");
   const sliby = [...e.dataTransfer.items].filter(i => i.kind === "file" && i.getAsFileSystemHandle).map(i => i.getAsFileSystemHandle());
   if (!spusteno) await start(true);
-  const handly = (await Promise.all(sliby)).filter(Boolean);
+  let handly = (await Promise.all(sliby)).filter(Boolean);
+  if (!handly.length) {
+    const files = [...e.dataTransfer.files].filter(f => jeDokument(f.name));
+    if (files.length) { const h = await ulozSoubory(files); if (vyberOtevreny) zavriVyber(); await otevri(h[0], [], true); return; }
+  }
   let prvniSoubor = null, slozek = 0;
   for (const h of handly) {
     if (h.kind === "directory") { await pridejKoren("slozka", h); slozek++; }
@@ -936,9 +983,13 @@ async function start(tise = false) {
   if (spusteno) return;
   spusteno = true;
   $("uvod").remove();
-  koreny = (await dbCti("koreny")) || [];
+  koreny = ((await dbCti("koreny")) || []).map(zDb);
   if (tise) return;
   const posl = await dbCti("posledni");
+  if (posl && posl.ulozeny) {
+    const k = koreny.find(x => x.file && x.file.name === posl.ulozeny);
+    if (k && await otevri(k.handle, [], false)) { rekni(TX.vitej); return; }
+  }
   if (posl && posl.handle) {
     const koren = posl.cesta && posl.cesta[0];
     if (await povol(koren || posl.handle) && await otevri(posl.handle, posl.cesta || [], false)) { rekni(TX.vitej); return; }
@@ -947,7 +998,7 @@ async function start(tise = false) {
   await otevriVyber();
 }
 nastavPismo(); obnovSkokTlacitka(); obnovDisplej();
-if (!window.showDirectoryPicker) ukaz(TX.neumiProhlizec, "");
+if (!MAPPY) $("n_pridej_slozku").style.display = "none";     // iPad: složky nejdou, jen dokumenty
 if ("serviceWorker" in navigator) navigator.serviceWorker.register(ZAKLAD + "sw.js").catch(() => {});
 </script>
 </body>
