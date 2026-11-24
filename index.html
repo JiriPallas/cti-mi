@@ -869,7 +869,10 @@ const KLAVESY = {
   Delete: () => { if (vyberOtevreny) odeberZPlochy(); },
 };
 document.addEventListener("keydown", e => {
-  if (!spusteno) { e.preventDefault(); start(); return; }
+  if (!spusteno) {                 // klávesy prohlížeče (Ctrl+Shift+R, F5 …) nechat projít
+    if (e.ctrlKey || e.altKey || e.metaKey || /^F\d+$/.test(e.key) || ["Control", "Shift", "Alt", "Meta"].includes(e.key)) return;
+    e.preventDefault(); start(); return;
+  }
   if (e.code === "Space") { e.preventDefault(); if (!e.repeat) tlDolu(); return; }
   if (e.ctrlKey && (e.key === "+" || e.key === "=")) { e.preventDefault(); pismo = Math.min(72, pismo + 4); nastavPismo(); ulozPozici(); return; }
   if (e.ctrlKey && e.key === "-") { e.preventDefault(); pismo = Math.max(16, pismo - 4); nastavPismo(); ulozPozici(); return; }
