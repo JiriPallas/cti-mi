@@ -330,8 +330,12 @@ const kratkeJmeno = v => v.name.replace(/^(Microsoft|Google)\s+/i, "").split(/[\
 function nactiHlasy() {
   if (!("speechSynthesis" in window)) return;
   hlasy = speechSynthesis.getVoices().filter(v => v.lang.toLowerCase().startsWith(J.hlasPrefix));
-  hlas = hlasy.find(v => v.name === nast.hlas) || hlasy.find(v => J.preferovanyHlas.test(v.name) && /natural|online/i.test(v.name))
-      || hlasy.find(v => J.preferovanyHlas.test(v.name))
+  // pořadí: uložená volba → přirozený online hlas (Edge) → kvalitní hlas iPadu (Premium/Vylepšený) → ostatní
+  const kvalita = v => { const t = v.name + " " + (v.voiceURI || "");
+    return (/natural|online/i.test(t) ? 40 : 0) + (/premium/i.test(t) ? 30 : 0) + (/enhanced|förbättrad|vylepšen|erweitert/i.test(t) ? 20 : 0)
+         + (J.preferovanyHlas.test(v.name) ? 5 : 0) + (/compact|kompakt/i.test(t) ? -10 : 0); };
+  hlasy.sort((a, b) => kvalita(b) - kvalita(a));
+  hlas = hlasy.find(v => v.name === nast.hlas) || (kvalita(hlasy[0] || {name: ""}) > 0 ? hlasy[0] : null)
       || hlasy.find(v => /natural|online/i.test(v.name)) || hlasy[0] || null;
   nahradniHlas = hlasy.find(v => v.localService) || null;      // bez internetu (česky Jakub)
   if (nastaveniOtevrene) obnovNastaveni();
