@@ -117,7 +117,7 @@
   <div id="n_hlas_popis" class="popis" data-t="hlas"></div>
   <div class="rada jedna"><button id="n_hlas">HLAS</button></div>
   <div class="popis" data-t="skokPopis"></div>
-  <div class="rada"><button id="n_odstavec"></button><button id="n_strana"></button></div>
+  <div class="rada"><button id="n_odstavec"></button><button id="n_strana"></button><button id="n_kapitola"></button></div>
   <div id="n_upozorneni" class="popis" data-t="upozorneni"></div>
   <div class="popis" data-t="razeniPopis"></div>
   <div class="rada"><button id="n_abeceda"></button><button id="n_nejnovejsi"></button></div>
@@ -175,15 +175,16 @@ function rozdelNaVety(odstavec) {
   const t = norm(odstavec);
   return spanyVet(t).map(([a, b]) => t.slice(a, b).trim()).filter(Boolean);
 }
-function vyrobDokument(odstavce, strany, druh, konce) {
+function vyrobDokument(odstavce, strany, druh, konce, nadpisy) {
   const pocet = Math.max(1, ...strany.map(s => s.length ? Math.max(...s) : 1));
-  return { odstavce, strany, konce: konce || strany.map(s => s.slice()), druh, pocet };
+  return { odstavce, strany, konce: konce || strany.map(s => s.slice()), druh, pocet, nadpisy: nadpisy || [] };
 }
 const NORMOSTRANA = 1800;
-function normostrany(texty) {
-  const odstavce = [], strany = [], konce = []; let znaku = 0;
-  for (const t of texty) {
+function normostrany(texty, priznaky = []) {
+  const odstavce = [], strany = [], konce = [], nadpisy = []; let znaku = 0;
+  for (const [ti, t] of texty.entries()) {
     const vety = rozdelNaVety(t); if (!vety.length) continue;
+    nadpisy.push(!!priznaky[ti]);
     const s = [], k = [];
     for (const v of vety) {
       s.push(1 + Math.floor(znaku / NORMOSTRANA));
@@ -192,7 +193,7 @@ function normostrany(texty) {
     }
     odstavce.push(vety); strany.push(s); konce.push(k);
   }
-  return vyrobDokument(odstavce, strany, "normostrana", konce);
+  return vyrobDokument(odstavce, strany, "normostrana", konce, nadpisy);
 }
 function odstavecSKonciStran(text, zlomy, strana) {
   const n = norm(text), spany = spanyVet(n);
@@ -247,6 +248,17 @@ async function nactiDocx(buf) {
     else if (el.localName === "tbl") odstavceXml.push(...el.getElementsByTagNameNS(W, "p"));
   }
   const surove = []; let maZlomy = false;
+  // Nadpis 1 ve Wordu = začátek kapitoly (styl Heading1/Nadpis1/Rubrik1/Überschrift1 nebo úroveň osnovy 1)
+  const jeNadpis1 = p => {
+    const pPr = [...p.children].find(c => c.namespaceURI === W && c.localName === "pPr"); if (!pPr) return false;
+    for (const c of pPr.children) {
+      if (c.namespaceURI !== W) continue;
+      const val = c.getAttributeNS(W, "val") || "";
+      if (c.localName === "pStyle" && /^(heading|nadpis|rubrik|.?berschrift|titre|kop)\s*1$/i.test(val)) return true;
+      if (c.localName === "outlineLvl" && val === "0") return true;
+    }
+    return false;
+  };
   for (const p of odstavceXml) {
     const casti = [], zlomy = []; let delka = 0;
     (function projdi(el) {
@@ -260,16 +272,16 @@ async function nactiDocx(buf) {
         projdi(c);
       }
     })(p);
-    surove.push([casti.join(""), zlomy]);
+    surove.push([casti.join(""), zlomy, jeNadpis1(p)]);
   }
-  if (!maZlomy) return normostrany(surove.map(x => x[0]));
-  const odstavce = [], strany = [], konce = []; let strana = 1;
-  for (const [text, zlomy] of surove) {
+  if (!maZlomy) return normostrany(surove.map(x => x[0]), surove.map(x => x[2]));
+  const odstavce = [], strany = [], konce = [], nadpisy = []; let strana = 1;
+  for (const [text, zlomy, nadpis] of surove) {
     if (!text.trim()) { strana += zlomy.length; continue; }
     const [vety, s, k, nova] = odstavecSKonciStran(text, zlomy, strana); strana = nova;
-    if (vety.length) { odstavce.push(vety); strany.push(s); konce.push(k); }
+    if (vety.length) { odstavce.push(vety); strany.push(s); konce.push(k); nadpisy.push(nadpis); }
   }
-  return vyrobDokument(odstavce, strany, "strana", konce);
+  return vyrobDokument(odstavce, strany, "strana", konce, nadpisy);
 }
 function nactiTxt(buf) {
   let text;
@@ -769,17 +781,48 @@ function stranaDal() {
   for (let j = i; j < poz.length; j++) if (konecStrany(...poz[j]) >= cil) { [o, v] = poz[j]; skokStrana = [o, v, cil]; break; }
   ulozPozici();
 }
-const skokZpet = () => skok === "strana" ? stranaZpet() : odstavecZpet();
-const skokDal = () => skok === "strana" ? stranaDal() : odstavecDal();
-const predchoziSkok = () => skoc(skokZpet);
-const dalsiSkok = () => skoc(skokDal);
+/* kapitola = odstavec, který začíná slovem „Kapitola“ (sv: „Kapitel“), nebo má ve Wordu styl Nadpis 1 */
+const jeKapitola = oo => !!(dok && dok.nadpisy[oo]) || J.kapitola.test(odstavce[oo][0] || "");
+const maKapitoly = () => odstavce.some((_, oo) => jeKapitola(oo));
+function kapitolaZpet() {
+  let k = o; while (k >= 0 && !jeKapitola(k)) k--;          // začátek kapitoly, ve které jsem
+  if (k >= 0 && (k < o || v > 0)) { o = k; v = 0; }
+  else { k = (k >= 0 ? k : o) - 1; while (k >= 0 && !jeKapitola(k)) k--; o = Math.max(k, 0); v = 0; }
+  ulozPozici();
+}
+function kapitolaDal() {
+  let k = o + 1; while (k < odstavce.length && !jeKapitola(k)) k++;
+  if (k < odstavce.length) { o = k; v = 0; ulozPozici(); return true; }
+  return false;
+}
+let kapitolaHlaska = "";
+function skokZpet() {
+  if (skok === "strana") return stranaZpet();
+  if (skok === "kapitola" && maKapitoly()) return kapitolaZpet();
+  if (skok === "kapitola") kapitolaHlaska = TX.zadneKapitoly;
+  odstavecZpet();
+}
+function skokDal() {
+  if (skok === "strana") return stranaDal();
+  if (skok === "kapitola" && maKapitoly()) { if (!kapitolaDal()) kapitolaHlaska = TX.posledniKapitola; return; }
+  if (skok === "kapitola") kapitolaHlaska = TX.zadneKapitoly;
+  odstavecDal();
+}
+function skocKapitola(fn) {     // u kapitol se nehlásí strana – hned zazní nadpis kapitoly
+  kapitolaHlaska = "";
+  skoc(fn, skok !== "kapitola");
+  if (kapitolaHlaska) { const h = kapitolaHlaska; kapitolaHlaska = ""; if (!cte) rekni(h); return; }
+  if (skok === "kapitola" && !cte && odstavce.length) rekni(odstavce[o][0]);
+}
+const predchoziSkok = () => skocKapitola(skokZpet);
+const dalsiSkok = () => skocKapitola(skokDal);
 
 /* ================================================================ nastavení */
 function obnovNastaveni() {
   $("n_rychlost").textContent = TX.rychlostCteni(`${rychlost >= 0 ? "+" : ""}${Math.round(rychlost * 100)} %`);
   $("n_hlas").textContent = hlas ? "🔊  " + kratkeJmeno(hlas).toUpperCase() : (!MAPPY || hlasy.length ? TX.systemHlas : TX.zadnyHlas);
   $("n_hlas_popis").textContent = TX.hlasPopis(volbyHlasu().length > 1) + (hlas && !hlas.localService ? TX.hlasOnline : "");
-  const zaklady = { n_odstavec: ["odstavec", J.html.odstavcich], n_strana: ["strana", J.html.strankach],
+  const zaklady = { n_odstavec: ["odstavec", J.html.odstavcich], n_strana: ["strana", J.html.strankach], n_kapitola: ["kapitola", J.html.kapitolach],
                     n_abeceda: ["abeceda", J.html.abecedne], n_nejnovejsi: ["nejnovejsi", J.html.nejnovejsi] };
   for (const [id, [klic, text]] of Object.entries(zaklady)) {
     const zvol = klic === skok || klic === razeni;
@@ -792,7 +835,7 @@ function obnovNastaveni() {
   obnovSkokTlacitka();
 }
 function obnovSkokTlacitka() {
-  const slovo = skok === "strana" ? J.html.skokStrana : J.html.skokOdstavec;
+  const slovo = skok === "strana" ? J.html.skokStrana : skok === "kapitola" ? J.html.skokKapitola : J.html.skokOdstavec;
   $("b_odstzpet").innerHTML = `⏮&nbsp; ${slovo}`; $("b_odstdal").innerHTML = `${slovo}&nbsp; ⏭`;
 }
 function otevriNastaveni() {
@@ -822,7 +865,7 @@ function dalsiHlas() {
 }
 function nastavSkok(s) {
   skok = s; nast.skok = s; ulozNast(); obnovNastaveni();
-  rekni(s === "strana" ? TX.poStrankach : TX.poOdstavcich);
+  rekni(s === "strana" ? TX.poStrankach : s === "kapitola" ? TX.poKapitolach : TX.poOdstavcich);
 }
 function nastavRazeni(r) { razeni = r; nast.razeni = r; ulozNast(); obnovNastaveni(); rekni(r === "abeceda" ? TX.abecedne : TX.nejnovejsi); }
 async function pridejSlozku() {
@@ -893,7 +936,9 @@ function tlNahoru() {
     ohlasitStranu = true; pozdeji(80, cti); return;
   }
   if (t - tl.posledniKlik <= tlNast.dvojklik_ms) {  // dvojklik → odstavec / stránka dál a čti
-    tl.posledniKlik = -1e9; stop(); casStop = 0; skokDal(); ohlasitStranu = true; cti(); return;
+    tl.posledniKlik = -1e9; stop(); casStop = 0; kapitolaHlaska = ""; skokDal(); ohlasitStranu = skok !== "kapitola";
+    if (kapitolaHlaska) { rekni(kapitolaHlaska); kapitolaHlaska = ""; return; }
+    cti(); return;
   }
   tl.posledniKlik = t;
   if (!tl.cetl) cti();                              // (pokud se četlo, zastavil už stisk)
@@ -941,7 +986,7 @@ klik("v_pred", () => vyberPosun(-1)); klik("v_dalsi", () => vyberPosun(+1));
 klik("v_cti", () => vyberOtevri()); klik("v_zpet", vyberZrus);
 klik("n_pomaleji", () => zmenRychlost(-0.1)); klik("n_rychleji", () => zmenRychlost(+0.1));
 klik("n_hlas", dalsiHlas);
-klik("n_odstavec", () => nastavSkok("odstavec")); klik("n_strana", () => nastavSkok("strana"));
+klik("n_odstavec", () => nastavSkok("odstavec")); klik("n_strana", () => nastavSkok("strana")); klik("n_kapitola", () => nastavSkok("kapitola"));
 klik("n_abeceda", () => nastavRazeni("abeceda")); klik("n_nejnovejsi", () => nastavRazeni("nejnovejsi"));
 klik("n_pridej_slozku", pridejSlozku); klik("n_pridej_soubor", pridejSoubor);
 klik("n_hotovo", zavriNastaveni);
