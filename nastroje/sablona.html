@@ -763,8 +763,12 @@ function poVete() {
 async function cti() {
   if (!odstavce.length) return;
   const g = ++gen;
-  await zkontrolujZmenu();
-  if (g !== gen) return;                     // mezitím STOP
+  // iPhone/iPad: řeč musí začít přímo v okamžiku dotyku, jinak ji systém přehraje potichu.
+  // Uložený dokument (iPad) se mezitím změnit nemůže → bez čekání. Ve Windows se kontroluje změna ve Wordu.
+  if (soubor && !soubor.handle.ulozeny) {
+    await zkontrolujZmenu();
+    if (g !== gen) return;                   // mezitím STOP
+  }
   const pauza = (performance.now() - casStop) / 1000;
   if (casStop && pauza >= VRATIT_PO_PAUZE_S) posunVetu(-1);
   const interval = 60000 * (nast.orientace_min || ORIENTACE_MIN);
