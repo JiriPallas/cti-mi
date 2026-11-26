@@ -389,14 +389,46 @@ function dokonceno(id) {
   if (m.potom) m.potom();
 }
 function ticho() { mluvId++; mluva = null; if ("speechSynthesis" in window) speechSynthesis.cancel(); }
+/* iPhone/iPad pustí zvuk webu jen přímo v okamžiku dotyku/klávesy. Čtení startuje až po krátkém načtení
+   dokumentu, proto při každém dotyku „odemkneme“ řeč tichou promluvou. */
+function odemkniRec() {
+  if (!("speechSynthesis" in window) || speechSynthesis.speaking || speechSynthesis.pending) return;
+  try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; u.lang = J.lang; speechSynthesis.speak(u); } catch (e) {}
+}
+document.addEventListener("pointerdown", odemkniRec, true);
+document.addEventListener("keydown", odemkniRec, true);
 setInterval(() => {          // pojistka: některé hlasy občas nedají vědět, že domluvily
   const m = mluva; if (!m || m.hotovo || !("speechSynthesis" in window)) return;
   const mluvi = speechSynthesis.speaking || speechSynthesis.pending, uplynulo = performance.now() - m.start;
   if (m.zacala && !mluvi && uplynulo > 800) dokonceno(m.id);
   else if (!m.zacala && !mluvi && uplynulo > 3000) {
-    if (m.pokusu++ < 1) { m.start = performance.now(); promluv(m); } else dokonceno(m.id);
+    if (m.pokusu++ < 1) { m.start = performance.now(); promluv(m); }
+    else if (cte) { stop(); $("stav").textContent = TX.recNejde; }      // telefon řeč zablokoval → nečíst potichu dál
+    else dokonceno(m.id);
+  }
+  // iPhone/iPad: řečový modul se po dlouhém čtení občas „zasekne“ – tváří se, že mluví, ale věta nikdy neskončí
+  else if (uplynulo > 6000 + m.text.length * 150 / rate()) {
+    speechSynthesis.cancel();
+    if (m.pokusu++ < 2) { m.zacala = false; m.start = performance.now(); setTimeout(() => { if (m.id === mluvId && !m.hotovo) promluv(m); }, 250); }
+    else dokonceno(m.id);
   }
 }, 400);
+
+/* Obrazovka nezhasne, dokud se čte (zhasnutá obrazovka = telefon čtení zastaví). Po STOP zase smí. */
+let zamekObrazovky = null;
+async function drzObrazovku(ano) {
+  try {
+    if (ano && !zamekObrazovky && navigator.wakeLock && document.visibilityState === "visible")
+      { zamekObrazovky = await navigator.wakeLock.request("screen"); zamekObrazovky.addEventListener("release", () => { zamekObrazovky = null; }); }
+    else if (!ano && zamekObrazovky) { const z = zamekObrazovky; zamekObrazovky = null; await z.release(); }
+  } catch (e) {}
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible" || !cte) return;
+  drzObrazovku(true);
+  const m = mluva;                 // po návratu do aplikace: pokud řeč mezitím umřela, zopakovat větu
+  if (m && !m.hotovo && !speechSynthesis.speaking) { speechSynthesis.cancel(); m.zacala = false; m.start = performance.now(); promluv(m); }
+});
 
 /* ================================================================ stav */
 let dok = null, odstavce = [], soubor = null;      // soubor = { handle, cesta:[složky], klic, otisk }
@@ -724,7 +756,7 @@ function poVete() {
     if (strana() !== stara) { zvuk.strana(); pozdeji(350, rekniVetu); }
     else rekniVetu();
   } else {
-    cte = false; gen++; obnovDisplej();
+    cte = false; gen++; drzObrazovku(false); obnovDisplej();
     setTimeout(() => rekni(TX.konecDokumentu), 200);
   }
 }
@@ -737,11 +769,11 @@ async function cti() {
   if (casStop && pauza >= VRATIT_PO_PAUZE_S) posunVetu(-1);
   const interval = 60000 * (nast.orientace_min || ORIENTACE_MIN);
   if (!casOrientace || performance.now() - casOrientace >= interval) ohlasitNazev = true;
-  cte = true; obnovDisplej(); rekniVetu();
+  cte = true; drzObrazovku(true); obnovDisplej(); rekniVetu();
 }
 function stop() {
   if (cte) casStop = performance.now();
-  gen++; cte = false; ticho(); obnovDisplej();
+  gen++; cte = false; ticho(); drzObrazovku(false); obnovDisplej();
 }
 function ctiStop() { cte ? stop() : cti(); }
 function posunVetu(krok) {
